@@ -1,7 +1,18 @@
 import io
 import html
 import datetime
-from weasyprint import HTML
+import logging
+
+logger = logging.getLogger(__name__)
+
+try:
+    from weasyprint import HTML
+    WEASYPRINT_AVAILABLE = True
+except Exception as _e:
+    HTML = None
+    WEASYPRINT_AVAILABLE = False
+    logger.warning("WeasyPrint could not be loaded (missing GTK runtime on Windows). PDF generation will use ReportLab fallback.")
+
 
 class PDFGeneratorService:
     """
@@ -624,7 +635,120 @@ class PDFGeneratorService:
 </body>
 </html>
 """
-        # Compile HTML string to PDF bytes via WeasyPrint
-        pdf_bytes = io.BytesIO()
-        HTML(string=html_content).write_pdf(target=pdf_bytes)
-        return pdf_bytes.getvalue()
+        # Compile HTML string to PDF bytes via WeasyPrint if available
+        if WEASYPRINT_AVAILABLE and HTML is not None:
+            try:
+                pdf_bytes = io.BytesIO()
+                HTML(string=html_content).write_pdf(target=pdf_bytes)
+                return pdf_bytes.getvalue()
+            except Exception as e:
+                logger.warning(f"WeasyPrint rendering failed ({e}). Falling back to ReportLab.")
+
+        return cls._generate_report_reportlab(data)
+
+    @classmethod
+    def _generate_report_reportlab(cls, data: dict) -> bytes:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            leftMargin=36,
+            rightMargin=36,
+            topMargin=36,
+            bottomMargin=36
+        )
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'DocTitle',
+            parent=styles['Heading1'],
+            fontSize=20,
+            leading=24,
+            textColor=colors.HexColor('#1e293b')
+        )
+        heading_style = ParagraphStyle(
+            'SectionHeading',
+            parent=styles['Heading2'],
+            fontSize=13,
+            leading=16,
+            textColor=colors.HexColor('#0f172a'),
+            spaceBefore=10,
+            spaceAfter=4
+        )
+        body_style = ParagraphStyle(
+            'Body',
+            parent=styles['Normal'],
+            fontSize=9,
+            leading=13,
+            textColor=colors.HexColor('#334155')
+        )
+
+        story = []
+        story.append(Paragraph("Lemma Plagiarism Analysis Report", title_style))
+        story.append(Spacer(1, 10))
+
+        filename = data.get("filename", "unknown_document.txt")
+        char_count = data.get("char_count", 0)
+        sentence_count = data.get("sentence_count", 0)
+        analysis = data.get("analysis", {}) or {}
+        plag_score_float = analysis.get("plagiarism_score", 0.0)
+        plag_score_pct = int(round(plag_score_float * 100))
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        meta_text = (
+            f"<b>File Name:</b> {html.escape(str(filename))}<br/>"
+            f"<b>Generated:</b> {current_time}<br/>"
+            f"<b>Total Characters:</b> {char_count:,} | <b>Total Sentences:</b> {sentence_count:,}"
+        )
+        story.append(Paragraph(meta_text, body_style))
+        story.append(Spacer(1, 12))
+
+        story.append(Paragraph("Integrity Summary", heading_style))
+        metrics_data = [
+            ["Metric", "Value"],
+            ["Overall Plagiarism Score", f"{plag_score_pct}%"],
+            ["Lexical Matches", f"{analysis.get('lexical_matches_count', 0)} sentence(s)"],
+            ["Hybrid Matches", f"{analysis.get('hybrid_matches_count', 0)} sentence(s)"],
+            ["Semantic Matches", f"{analysis.get('semantic_matches_count', 0)} sentence(s)"],
+        ]
+        t = Table(metrics_data, colWidths=[200, 200])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (1,0), colors.HexColor('#f1f5f9')),
+            ('TEXTCOLOR', (0,0), (1,0), colors.HexColor('#0f172a')),
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 12))
+
+        matches = analysis.get("matches", [])
+        if matches:
+            story.append(Paragraph("Top Reference Matches", heading_style))
+            for i, m in enumerate(matches[:10], 1):
+                query = m.get("query_sentence", {}).get("text", "")
+                ref = m.get("matched_sentence", {})
+                ref_text = ref.get("text", "")
+                doc_title = ref.get("doc_title", "Unknown Reference")
+                score = m.get("score", 0.0)
+                m_type = str(m.get("match_type", "lexical")).upper()
+
+                match_info = (
+                    f"<b>Match #{i} [{m_type}]</b> - Similarity: {int(score * 100)}%<br/>"
+                    f"<b>Query:</b> {html.escape(str(query))}<br/>"
+                    f"<b>Source:</b> {html.escape(str(doc_title))}<br/>"
+                    f"<b>Reference Text:</b> {html.escape(str(ref_text))}<br/>"
+                )
+                story.append(Paragraph(match_info, body_style))
+                story.append(Spacer(1, 6))
+
+        doc.build(story)
+        return buffer.getvalue()
+
