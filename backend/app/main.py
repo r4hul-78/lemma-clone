@@ -422,6 +422,11 @@ async def analyze_document_async(file: UploadFile = File(...)):
                 if content_size > max_bytes:
                     raise FileSizeExceededError(f"File size exceeds limit of {settings.MAX_FILE_SIZE_MB}MB.")
                 f.write(chunk)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except Exception:
+                pass
     except FileSizeExceededError as e:
         if temp_filepath.exists():
             temp_filepath.unlink()
