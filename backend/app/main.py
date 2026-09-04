@@ -30,7 +30,8 @@ if DATABASE_URL:
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 else:
-   DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/lemma"
+   DATABASE_URL = f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
+
 
 engine = create_engine(DATABASE_URL)
 
@@ -421,6 +422,11 @@ async def analyze_document_async(file: UploadFile = File(...)):
                 if content_size > max_bytes:
                     raise FileSizeExceededError(f"File size exceeds limit of {settings.MAX_FILE_SIZE_MB}MB.")
                 f.write(chunk)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except Exception:
+                pass
     except FileSizeExceededError as e:
         if temp_filepath.exists():
             temp_filepath.unlink()

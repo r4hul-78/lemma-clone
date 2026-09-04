@@ -28,10 +28,34 @@ class DatabaseService:
     @classmethod
     def initialize_db(cls):
         """Creates the PostgreSQL tables and extensions if they do not already exist."""
+        # Ensure database exists
+        try:
+            conn_test = cls.get_connection()
+            conn_test.close()
+        except psycopg2.OperationalError as e:
+            if "does not exist" in str(e):
+                try:
+                    conn_def = psycopg2.connect(
+                        host=settings.POSTGRES_HOST,
+                        port=settings.POSTGRES_PORT,
+                        database="postgres",
+                        user=settings.POSTGRES_USER,
+                        password=settings.POSTGRES_PASSWORD,
+                        connect_timeout=5
+                    )
+                    conn_def.autocommit = True
+                    target_db = settings.POSTGRES_DB or "lemma"
+                    with conn_def.cursor() as cur:
+                        cur.execute(f'CREATE DATABASE "{target_db}";')
+                    conn_def.close()
+                except Exception:
+                    pass
+
         with cls.get_connection() as conn:
             with conn.cursor() as cursor:
                 # Enable pgvector extension
                 cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+
                 
                 # Create documents table
                 cursor.execute("""

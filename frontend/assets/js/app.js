@@ -4,7 +4,8 @@
 
 document.addEventListener("DOMContentLoaded", () => {
     // API URL configuration
-    let API_BASE_URL = 'https://r4hul-78-lemma-backend.hf.space'; -icon
+    let API_BASE_URL = 'http://127.0.0.1:8000';
+
     let API_UPLOAD_URL = `${API_BASE_URL}/api/v1/documents/upload`;
     let API_ANALYZE_URL = `${API_BASE_URL}/api/v1/analyze`;
     let API_STATUS_URL = `${API_BASE_URL}/api/v1/status`;
@@ -64,17 +65,21 @@ document.addEventListener("DOMContentLoaded", () => {
     let isParaphrasing = false;
 
     // Initialize Page
-    async function initApiConfig() {
-        try {
-            const resolvedUrl = await APIConfigManager.getApiBaseUrl();
-            updateApiUrls(resolvedUrl);
-            console.log("Resolved API URL:", resolvedUrl);
-        } catch (err) {
-            console.warn("Failed resolving API from config manager, fallback to default URL:", err);
-        } finally {
-            checkServerHealth();
-            setInterval(checkServerHealth, 10000); // Check health every 10 seconds
-        }
+    function initApiConfig() {
+        // FORCE LOCAL BACKEND ON PORT 8000
+        const resolvedUrl = 'http://127.0.0.1:8000';
+
+        updateApiUrls(resolvedUrl);
+
+        console.log("LEMMA API:", API_BASE_URL);
+        console.log("HEALTH:", API_HEALTH_URL);
+        console.log("UPLOAD:", API_UPLOAD_URL);
+        console.log("ANALYZE:", API_ANALYZE_URL);
+        console.log("STATUS:", API_STATUS_URL);
+        console.log("REWRITE:", API_REWRITE_URL);
+
+        checkServerHealth();
+        setInterval(checkServerHealth, 10000);
     }
 
     initApiConfig();
